@@ -1,3 +1,6 @@
+import FunnelNivel from "../components/FunnelNivel";
+import PieGastos from "../components/PieGastos";
+
 function money(n) {
   return (Number(n || 0)).toLocaleString("es-CO");
 }
@@ -64,6 +67,8 @@ const essentialExpenseThisMonth = txnsThisMonth
 
 const nonEssentialExpenseThisMonth =
   Math.max(0, totalExpenseThisMonth - essentialExpenseThisMonth);
+const savingsThisMonth = Math.max(0, incomeThisMonth - totalExpenseThisMonth);
+
 
 // Meses de cobertura REAL
 const coverageMonths =
@@ -242,6 +247,24 @@ const coverageMonths =
           <button style={styles.btnPrimary} onClick={onGoIncome}>Registrar ingreso</button>
           <button style={styles.btnPrimary} onClick={onGoExpense}>Registrar gasto</button>
         </section>
+{/* ===================== */}
+{/* VISUALES ESTRATÉGICOS */}
+{/* ===================== */}
+
+<section style={{ marginTop: 28 }}>
+  <div style={styles.card}>
+    <FunnelNivel nivelActual={lvl.level} />
+  </div>
+
+  <div style={{ ...styles.card, marginTop: 16 }}>
+    <PieGastos
+      esenciales={essentialExpenseThisMonth}
+      noEsenciales={nonEssentialExpenseThisMonth}
+      ahorro={savingsThisMonth}
+    />
+  </div>
+</section>
+
       </div>
     </div>
   );
