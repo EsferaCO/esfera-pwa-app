@@ -54,6 +54,11 @@ export default function Auth() {
           {isLogin ? 'Crear cuenta' : 'Iniciar sesión'}
         </button>
       </p>
+
+       <p style={ styles.legal }>
+        Desarrollado por <strong>Andrés Betancourt</strong>, Magister en Finanzas.
+	ESFERA es una herramienta educativa y no constituye asesoria financiera personalizada.
+      
     </div>
   );
 }

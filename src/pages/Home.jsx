@@ -246,6 +246,8 @@ const coverageMonths =
           <button style={styles.btnSecondary} onClick={onGoCategories}>Categorías</button>
           <button style={styles.btnPrimary} onClick={onGoIncome}>Registrar ingreso</button>
           <button style={styles.btnPrimary} onClick={onGoExpense}>Registrar gasto</button>
+	<button style={styles.btnSecondary} onClick={onGoDebts}>Deudas</button>
+
         </section>
 {/* ===================== */}
 {/* VISUALES ESTRATÉGICOS */}
