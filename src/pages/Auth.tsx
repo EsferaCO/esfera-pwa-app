@@ -56,9 +56,10 @@ export default function Auth() {
       </p>
 
        <p style={ styles.legal }>
-        Desarrollado por <strong>Andrés Betancourt</strong>, Magister en Finanzas.
+        Desarrollado por <strong>Andrés Betancourt</strong>, Magister en Finanzas. 
 	ESFERA es una herramienta educativa y no constituye asesoria financiera personalizada.
-      
+        Asesorias / charlas /@andresbetancourt.co
+
     </div>
   );
 }
