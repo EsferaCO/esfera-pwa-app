@@ -123,16 +123,17 @@ export default function Debts({
           }
         />
 
-        <label style={{ fontSize: 14 }}>
-          <input
-            type="checkbox"
-            checked={form.includeInCashFlow}
-            onChange={(e) =>
-              setForm({ ...form, includeInCashFlow: e.target.checked })
-            }
-          {" "}
-          Incluir dinero en mi saldo disponible
-        </label>
+       <label style={{ fontSize: 14, display: "flex", gap: 8, alignItems: "center" }}>
+  <input
+    type="checkbox"
+    checked={form.includeInCashFlow}
+    onChange={(e) =>
+      setForm({ ...form, includeInCashFlow: e.target.checked })
+    }
+  />
+  <span>Incluir dinero en mi saldo disponible</span>
+</label>
+
 
         {form.includeInCashFlow && (
           <select
