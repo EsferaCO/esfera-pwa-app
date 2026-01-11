@@ -29,19 +29,19 @@ function useLocalStorageState(key, initialValue) {
 }
 
 const DEFAULT_CATEGORIES = [
-  { id: crypto.randomUUID(), name: "Ingresos", type: "Ingreso", percent: "", essential: false },
-  { id: crypto.randomUUID(), name: "Vivienda", type: "Gasto fijo", percent: "", essential: true },
-  { id: crypto.randomUUID(), name: "Alimentación", type: "Gasto variable", percent: "", essential: true },
-  { id: crypto.randomUUID(), name: "Servicios públicos", type: "Gasto fijo", percent: "", essential: true },
-  { id: crypto.randomUUID(), name: "Transporte", type: "Gasto variable", percent: "", essential: true },
-  { id: crypto.randomUUID(), name: "Salud", type: "Gasto fijo", percent: "", essential: true },
-  { id: crypto.randomUUID(), name: "Gastos personales y vestuario", type: "Gasto variable", percent: "", essential: false },
-  { id: crypto.randomUUID(), name: "Educación y desarrollo", type: "Ahorro / Inversión", percent: "", essential: false },
-  { id: crypto.randomUUID(), name: "Entretenimiento y ocio", type: "Gasto variable", percent: "", essential: false },
-  { id: crypto.randomUUID(), name: "Deudas financieras", type: "Gasto fijo", percent: "", essential: true },
-  { id: crypto.randomUUID(), name: "Seguros y protección", type: "Gasto fijo", percent: "", essential: true },
-  { id: crypto.randomUUID(), name: "Inversión", type: "Ahorro / Inversión", percent: "", essential: false },
-  { id: crypto.randomUUID(), name: "Fondo de emergencia", type: "Ahorro", percent: "", essential: false },
+  { id: crypto.randomUUID(), name: "Ingresos", type: "Ingreso", percent: "", essential: false, isDefault: true },
+  { id: crypto.randomUUID(), name: "Vivienda", type: "Gasto fijo", percent: "", essential: true, isDefault: true },
+  { id: crypto.randomUUID(), name: "Alimentación", type: "Gasto variable", percent: "", essential: true, isDefault: true },
+  { id: crypto.randomUUID(), name: "Servicios públicos", type: "Gasto fijo", percent: "", essential: true, isDefault: true },
+  { id: crypto.randomUUID(), name: "Transporte", type: "Gasto variable", percent: "", essential: true, isDefault: true },
+  { id: crypto.randomUUID(), name: "Salud", type: "Gasto fijo", percent: "", essential: true, isDefault: true },
+  { id: crypto.randomUUID(), name: "Gastos personales y vestuario", type: "Gasto variable", percent: "", essential: false, isDefault: true },
+  { id: crypto.randomUUID(), name: "Educación y desarrollo", type: "Ahorro / Inversión", percent: "", essential: false, isDefault: true },
+  { id: crypto.randomUUID(), name: "Entretenimiento y ocio", type: "Gasto variable", percent: "", essential: false, isDefault: true },
+  { id: crypto.randomUUID(), name: "Deudas financieras", type: "Gasto fijo", percent: "", essential: true, isDefault: true },
+  { id: crypto.randomUUID(), name: "Seguros y protección", type: "Gasto fijo", percent: "", essential: true, isDefault: true },
+  { id: crypto.randomUUID(), name: "Inversión", type: "Ahorro / Inversión", percent: "", essential: false, isDefault: true },
+  { id: crypto.randomUUID(), name: "Fondo de emergencia", type: "Ahorro", percent: "", essential: false, isDefault: true },
 ];
 
 const DEFAULT_ACCOUNTS = [
@@ -94,24 +94,41 @@ export default function App() {
     return sum;
   }, [accounts, computedAccountBalances]);
 
-  /* --- ACCIONES CORREGIDAS --- */
+  /* --- ACCIÓN DE CIERRE DE SESIÓN --- */
+  async function handleLogout() {
+    const { error } = await supabase.auth.signOut();
+    if (error) alert("Error al cerrar sesión: " + error.message);
+  }
+
+  /* --- ACCIONES DE CUENTAS --- */
   function addAccount(acc) {
     const newAcc = { id: crypto.randomUUID(), ...acc };
     setAccounts(prev => [...prev, newAcc]);
   }
-
   function deleteAccount(id) {
     setAccounts(prev => prev.filter(a => a.id !== id));
-    setTxns(prev => prev.filter(t => t.accountId !== id)); // Limpia txns de esa cuenta
+    setTxns(prev => prev.filter(t => t.accountId !== id));
   }
 
+  /* --- ACCIONES DE CATEGORÍAS --- */
+  function addCategory(cat) {
+    const newCat = { id: crypto.randomUUID(), ...cat, percent: "", essential: false, isDefault: false };
+    setCategories(prev => [...prev, newCat]);
+  }
+  function deleteCategory(id) {
+    setCategories(prev => prev.filter(c => c.id !== id));
+  }
+  function updateCategory(id, changes) {
+    setCategories(prev => prev.map(c => c.id === id ? { ...c, ...changes } : c));
+  }
+
+  /* --- ACCIONES DE TRANSACCIONES --- */
   function addTxn(txn) {
     setTxns((prev) => [
       { id: crypto.randomUUID(), ...txn, amount: Number(txn.amount || 0) },
       ...prev,
     ]);
   }
-
   function deleteTxn(txnId) {
     setTxns((prev) => prev.filter((t) => t.id !== txnId));
   }
@@ -128,18 +145,16 @@ export default function App() {
     goDebts: () => setView("debts"),
   };
 
-  if (view === "categories") return <Categories goBack={nav.goHome} categories={categories} setCategories={setCategories} txns={txns} selectedYear={selectedYear} selectedMonth={selectedMonth} />;
-
-  // AQUÍ ESTABA EL ERROR: Faltaban las props de acción
-  if (view === "accounts") return (
-    <Accounts 
-      goBack={nav.goHome} 
-      accounts={accounts} 
-      balancesMap={computedAccountBalances} 
-      addAccount={addAccount}
-      deleteAccount={deleteAccount}
-      addTxn={addTxn}
+  if (view === "categories") return (
+    <Categories 
+      goBack={nav.goHome} categories={categories} addCategory={addCategory}
+      deleteCategory={deleteCategory} updateCategory={updateCategory}
+      txns={txns} selectedYear={selectedYear} selectedMonth={selectedMonth} 
     />
+  );
+
+  if (view === "accounts") return (
+    <Accounts goBack={nav.goHome} accounts={accounts} balancesMap={computedAccountBalances} addAccount={addAccount} deleteAccount={deleteAccount} addTxn={addTxn} />
   );
 
   if (view === "income") return <Income goBack={nav.goHome} accounts={accounts} addTxn={addTxn} deleteTxn={deleteTxn} txns={txns} />;
@@ -148,6 +163,7 @@ export default function App() {
 
   return (
     <Home 
+      onLogout={handleLogout} // <--- Enviamos la función de cierre de sesión
       onGoAccounts={nav.goAccounts} onGoCategories={nav.goCategories} onGoDebts={nav.goDebts} onGoIncome={nav.goIncome} onGoExpense={nav.goExpense} 
       accounts={accounts} balancesMap={computedAccountBalances} categories={categories} txns={txns} totalFunds={totalFunds} 
       selectedYear={selectedYear} setSelectedYear={setSelectedYear} selectedMonth={selectedMonth} setSelectedMonth={setSelectedMonth} 

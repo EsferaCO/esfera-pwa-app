@@ -27,6 +27,7 @@ export default function Home({
   onGoIncome,
   onGoExpense,
   onGoDebts,
+  onLogout, // <--- Nueva prop recibida de App.js
   accounts = [],
   categories = [],
   txns = [],
@@ -58,19 +59,16 @@ export default function Home({
   const expenseThisMonth = txnsThisMonth.filter(t => t.type === "expense").reduce((s, t) => s + Number(t.amount || 0), 0);
 
   // --- 3. LÓGICA DE COBERTURA INTELIGENTE ---
-  // Si en el mes actual no hay gastos, buscamos el promedio histórico para que el nivel no sea 0
   const allExpenses = txns.filter(t => t.type === "expense");
   const avgMonthlyExpense = allExpenses.length > 0 
     ? allExpenses.reduce((s, t) => s + Number(t.amount), 0) / (new Set(allExpenses.map(t => t.date.substring(0,7))).size || 1)
     : 0;
 
-  // Usamos el gasto de este mes, pero si es 0, usamos el promedio para calcular libertad financiera
   const costOfLiving = expenseThisMonth > 0 ? expenseThisMonth : avgMonthlyExpense;
-  
   const coverageMonths = costOfLiving > 0 ? cumulativeBalance / costOfLiving : 0;
   const lvl = levelFromCoverageMonths(coverageMonths);
 
-  // --- 4. PREPARACIÓN DE TABLA PPTO VS REAL (MANTENIDA) ---
+  // --- 4. PREPARACIÓN DE TABLA PPTO VS REAL ---
   const tableData = categories
     .filter((c) => c.type !== "Ingreso")
     .map((c) => {
@@ -90,6 +88,9 @@ export default function Home({
             <p style={styles.subtitle}>Control financiero personal</p>
           </div>
           <div style={styles.filters}>
+            {/* BOTÓN DE CERRAR SESIÓN INTEGRADO */}
+            <button onClick={onLogout} style={styles.btnLogout}>Salir</button>
+            
             <select value={selectedMonth} onChange={(e) => setSelectedMonth(Number(e.target.value))} style={styles.select}>
               {Array.from({ length: 12 }).map((_, i) => (<option key={i+1} value={i+1}>{String(i+1).padStart(2, "0")}</option>))}
             </select>
@@ -98,32 +99,25 @@ export default function Home({
         </header>
 
         <section style={styles.grid}>
-          {/* NIVEL FINANCIERO Y FUNNEL ASOCIADO */}
           <div style={styles.card}>
             <h2 style={styles.cardTitle}>Nivel financiero</h2>
             <div style={styles.levelRow}>
               <div style={styles.levelBig}>Nivel {lvl.level} · {lvl.label}</div>
               <div style={styles.levelMeta}>Cobertura: <strong>{coverageMonths.toFixed(1)}</strong> meses</div>
             </div>
-            
-            {/* El componente FunnelNivel ahora recibe el nivel real y DEBE pintarse/seleccionarse internamente */}
             <div style={{ marginTop: 20 }}>
                <FunnelNivel nivelActual={lvl.level} />
             </div>
-            
             <div style={{...styles.badge, marginTop: 20}}>
               Estrategia: {lvl.level <= 1 ? "Escudo" : lvl.level === 2 ? "Estabilización" : lvl.level <= 4 ? "Optimización" : "Soberanía"}
             </div>
           </div>
 
-          {/* FONDO Y GRÁFICA DE GASTOS */}
           <div style={styles.card}>
             <h2 style={styles.cardTitle}>Fondo Disponible Acumulado</h2>
             <div style={styles.money}>$ {money(cumulativeBalance)}</div>
             <p style={styles.muted}>Saldo total al cierre de {selectedMonth}/{selectedYear}</p>
-            
             <hr style={{ margin: '20px 0', border: '0', borderTop: '1px solid #f0f4f8' }} />
-            
             <h3 style={{ fontSize: 14, color: '#102a43', marginBottom: 15 }}>Distribución de Gastos (Mes)</h3>
             <div style={{ height: 200 }}>
               <PieGastos 
@@ -135,7 +129,6 @@ export default function Home({
           </div>
         </section>
 
-        {/* TABLA DE CUMPLIMIENTO PROFESIONAL */}
         <section style={{ marginTop: 16 }}>
           <div style={styles.card}>
             <h2 style={styles.cardTitle}>Presupuesto vs Ejecución</h2>
@@ -185,6 +178,18 @@ const styles = {
   title: { margin: 0, fontSize: 52, letterSpacing: 1, color: "#102a43" },
   subtitle: { margin: "6px 0 0", color: "#334e68", fontSize: 16 },
   filters: { display: "flex", gap: 10, alignItems: "center" },
+  // NUEVO ESTILO PARA EL BOTÓN DE LOGOUT
+  btnLogout: { 
+    padding: "10px 14px", 
+    borderRadius: 10, 
+    border: "1px solid #f1f5f9", 
+    background: "#fff", 
+    color: "#94a3b8", 
+    fontSize: "12px", 
+    fontWeight: "700", 
+    cursor: "pointer",
+    transition: "all 0.2s"
+  },
   select: { padding: "10px 12px", borderRadius: 10, border: "1px solid #d9e2ec", background: "white" },
   year: { width: 90, padding: "10px 12px", borderRadius: 10, border: "1px solid #d9e2ec", background: "white" },
   grid: { display: "grid", gridTemplateColumns: "1fr 1fr", gap: 16, marginTop: 16 },
