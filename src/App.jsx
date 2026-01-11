@@ -9,9 +9,9 @@ import Income from "./pages/Income";
 import Expense from "./pages/Expense";
 import Debts from "./pages/Debts";
 
-/** ---------------------------
- *  Utilidad: localStorage state
- * --------------------------- */
+/* ===============================
+   Utilidad: estado en localStorage
+================================ */
 function useLocalStorageState(key, initialValue) {
   const [state, setState] = useState(() => {
     try {
@@ -31,9 +31,9 @@ function useLocalStorageState(key, initialValue) {
   return [state, setState];
 }
 
-/** ---------------------------
- *  Defaults
- * --------------------------- */
+/* ===============================
+   Defaults
+================================ */
 const DEFAULT_CATEGORIES = [
   { id: crypto.randomUUID(), name: "Ingresos", type: "Ingreso", percent: "", essential: false },
   { id: crypto.randomUUID(), name: "Vivienda", type: "Gasto fijo", percent: "", essential: true },
@@ -51,48 +51,66 @@ const DEFAULT_CATEGORIES = [
 ];
 
 const DEFAULT_ACCOUNTS = [
-  { id: crypto.randomUUID(), name: "Efectivo", initialBalance: 0, createdAt: new Date().toISOString().slice(0, 10) },
+  {
+    id: crypto.randomUUID(),
+    name: "Efectivo",
+    initialBalance: 0,
+    createdAt: new Date().toISOString().slice(0, 10),
+  },
 ];
 
+/* ===============================
+   APP
+================================ */
 export default function App() {
   const [session, setSession] = useState(null);
   const [loading, setLoading] = useState(true);
 
-  // 🔁 Vistas
-  const [view, setView] = useState("home"); 
+  /* -------- Navegación -------- */
+  const [view, setView] = useState("home");
   // home | categories | accounts | income | expense | debts
 
-  // Persistencia
+  /* -------- Persistencia -------- */
   const [accounts, setAccounts] = useLocalStorageState("esfera_accounts_v1", DEFAULT_ACCOUNTS);
   const [categories, setCategories] = useLocalStorageState("esfera_categories_v1", DEFAULT_CATEGORIES);
   const [txns, setTxns] = useLocalStorageState("esfera_txns_v1", []);
   const [debts, setDebts] = useLocalStorageState("esfera_debts_v1", []);
 
-  // Mes/Año
+  /* -------- Mes / Año -------- */
   const now = new Date();
   const [selectedYear, setSelectedYear] = useState(now.getFullYear());
   const [selectedMonth, setSelectedMonth] = useState(now.getMonth() + 1);
 
+  /* -------- Auth -------- */
   useEffect(() => {
+    let mounted = true;
+
     supabase.auth.getSession().then(({ data }) => {
+      if (!mounted) return;
       setSession(data.session);
       setLoading(false);
     });
 
-    const { data: { subscription } } =
-      supabase.auth.onAuthStateChange((_e, s) => setSession(s));
+    const {
+      data: { subscription },
+    } = supabase.auth.onAuthStateChange((_event, newSession) => {
+      setSession(newSession);
+    });
 
-    return () => subscription.unsubscribe();
+    return () => {
+      mounted = false;
+      subscription.unsubscribe();
+    };
   }, []);
 
-  /** ---------------------------
-   *  Balances
-   * --------------------------- */
+  /* ===============================
+     Balances (GLOBAL, sin filtro de mes)
+  ================================ */
   const computedAccountBalances = useMemo(() => {
     const map = new Map();
-    accounts.forEach(a => map.set(a.id, Number(a.initialBalance || 0)));
+    accounts.forEach((a) => map.set(a.id, Number(a.initialBalance || 0)));
 
-    txns.forEach(t => {
+    txns.forEach((t) => {
       if (!map.has(t.accountId)) return;
       const prev = map.get(t.accountId) || 0;
       const amt = Number(t.amount || 0);
@@ -105,27 +123,46 @@ export default function App() {
 
   const totalFunds = useMemo(() => {
     let sum = 0;
-    accounts.forEach(a => {
+    accounts.forEach((a) => {
       sum += computedAccountBalances.get(a.id) || 0;
     });
     return sum;
   }, [accounts, computedAccountBalances]);
 
-  /** ---------------------------
-   *  Acciones
-   * --------------------------- */
-  const addTxn = (txn) =>
-    setTxns([{ id: crypto.randomUUID(), ...txn }, ...txns]);
+  /* ===============================
+     Acciones
+  ================================ */
+  function addTxn(txn) {
+    setTxns((prev) => [
+      {
+        id: crypto.randomUUID(),
+        ...txn,
+        amount: Number(txn.amount || 0),
+        description: (txn.description || "").trim(),
+        categoryId: txn.categoryId || "",
+      },
+      ...prev,
+    ]);
+  }
 
-  /** ---------------------------
-   *  Auth
-   * --------------------------- */
-  if (loading) return <p style={{ textAlign: "center" }}>Cargando...</p>;
-  if (!session) return <Auth />;
+  function deleteTxn(txnId) {
+    setTxns((prev) => prev.filter((t) => t.id !== txnId));
+  }
 
-  /** ---------------------------
-   *  Navegación
-   * --------------------------- */
+  /* ===============================
+     Auth Gate
+  ================================ */
+  if (loading) {
+    return <p style={{ textAlign: "center", marginTop: 40 }}>Cargando...</p>;
+  }
+
+  if (!session) {
+    return <Auth />;
+  }
+
+  /* ===============================
+     Navegación
+  ================================ */
   const nav = {
     goHome: () => setView("home"),
     goCategories: () => setView("categories"),
@@ -135,15 +172,75 @@ export default function App() {
     goDebts: () => setView("debts"),
   };
 
-  /** ---------------------------
-   *  Render por vista
-   * --------------------------- */
-  if (view === "categories") return <Categories goBack={nav.goHome} categories={categories} setCategories={setCategories} txns={txns} selectedYear={selectedYear} selectedMonth={selectedMonth} />;
-  if (view === "accounts") return <Accounts goBack={nav.goHome} accounts={accounts} balancesMap={computedAccountBalances} setAccounts={setAccounts} />;
-  if (view === "income") return <Income goBack={nav.goHome} accounts={accounts} addTxn={addTxn} txns={txns} />;
-  if (view === "expense") return <Expense goBack={nav.goHome} accounts={accounts} categories={categories} addTxn={addTxn} txns={txns} />;
-  if (view === "debts") return <Debts goBack={nav.goHome} debts={debts} setDebts={setDebts} addTxn={addTxn} />;
+  /* ===============================
+     Render por vista
+  ================================ */
+  if (view === "categories") {
+    return (
+      <Categories
+        goBack={nav.goHome}
+        categories={categories}
+        setCategories={setCategories}
+        txns={txns}
+        selectedYear={selectedYear}
+        selectedMonth={selectedMonth}
+      />
+    );
+  }
 
+  if (view === "accounts") {
+    return (
+      <Accounts
+        goBack={nav.goHome}
+        accounts={accounts}
+        balancesMap={computedAccountBalances}
+        setAccounts={setAccounts}
+      />
+    );
+  }
+
+  if (view === "income") {
+    return (
+      <Income
+        goBack={nav.goHome}
+        accounts={accounts}
+        addTxn={addTxn}
+        deleteTxn={deleteTxn}
+        txns={txns}
+      />
+    );
+  }
+
+  if (view === "expense") {
+    return (
+      <Expense
+        goBack={nav.goHome}
+        accounts={accounts}
+        categories={categories}
+        addTxn={addTxn}
+        deleteTxn={deleteTxn}
+        txns={txns}
+      />
+    );
+  }
+
+  if (view === "debts") {
+    return (
+      <Debts
+        goBack={nav.goHome}
+        debts={debts}
+        setDebts={setDebts}
+        addTxn={addTxn}
+        txns={txns}
+        accounts={accounts}
+        categories={categories}
+      />
+    );
+  }
+
+  /* ===============================
+     HOME
+  ================================ */
   return (
     <Home
       onGoAccounts={nav.goAccounts}

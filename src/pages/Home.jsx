@@ -6,19 +6,19 @@ function money(n) {
 }
 
 function toMonthKey(dateStr) {
-  // dateStr: YYYY-MM-DD
+  if (!dateStr) return { y: 0, m: 0 };
   const [y, m] = dateStr.split("-").map(Number);
   return { y, m };
 }
 
 function levelFromCoverageMonths(months) {
-  if (!isFinite(months) || months <= 0) return { level: 0, label: "Vulnerable", range: "0 a <1 mes" };
-  if (months < 1) return { level: 0, label: "Vulnerable", range: "0 a <1 mes" };
-  if (months < 3) return { level: 1, label: "Inestable", range: "1 a <3 meses" };
-  if (months < 6) return { level: 2, label: "Equilibrado", range: "3 a <6 meses" };
-  if (months < 12) return { level: 3, label: "Preparado", range: "6 a <12 meses" };
-  if (months < 24) return { level: 4, label: "Estratégico", range: "12 a <24 meses" };
-  return { level: 5, label: "Libre", range: "24+ meses" };
+  if (!isFinite(months) || months <= 0) return { level: 0, label: "Vulnerable" };
+  if (months < 1) return { level: 0, label: "Vulnerable" };
+  if (months < 3) return { level: 1, label: "Inestable" };
+  if (months < 6) return { level: 2, label: "Equilibrado" };
+  if (months < 12) return { level: 3, label: "Preparado" };
+  if (months < 24) return { level: 4, label: "Estratégico" };
+  return { level: 5, label: "Libre" };
 }
 
 export default function Home({
@@ -26,92 +26,60 @@ export default function Home({
   onGoCategories,
   onGoIncome,
   onGoExpense,
-  accounts,
-  balancesMap,
-  categories,
-  txns,
-  totalFunds,
+  onGoDebts,
+  accounts = [],
+  categories = [],
+  txns = [],
   selectedYear,
   setSelectedYear,
   selectedMonth,
   setSelectedMonth,
 }) {
-  // Filtrar movimientos por mes
+  
+  // --- 1. FONDO ACUMULADO (ARRASTRE REAL) ---
+  const cumulativeBalance = accounts.reduce((total, acc) => {
+    const initial = Number(acc.initialBalance || 0);
+    const history = txns.filter(t => {
+      if (t.accountId !== acc.id) return false;
+      const { y, m } = toMonthKey(t.date);
+      return y < Number(selectedYear) || (y === Number(selectedYear) && m <= Number(selectedMonth));
+    });
+    const balanceDelta = history.reduce((sum, t) => t.type === 'income' ? sum + Number(t.amount) : sum - Number(t.amount), 0);
+    return total + (initial + balanceDelta);
+  }, 0);
+
+  // --- 2. GASTOS DEL MES ACTUAL ---
   const txnsThisMonth = txns.filter((t) => {
-    if (!t.date) return false;
     const { y, m } = toMonthKey(t.date);
     return y === Number(selectedYear) && m === Number(selectedMonth);
   });
 
-  const incomeThisMonth = txnsThisMonth
-    .filter((t) => t.type === "income")
-    .reduce((sum, t) => sum + Number(t.amount || 0), 0);
+  const incomeThisMonth = txnsThisMonth.filter(t => t.type === "income").reduce((s, t) => s + Number(t.amount || 0), 0);
+  const expenseThisMonth = txnsThisMonth.filter(t => t.type === "expense").reduce((s, t) => s + Number(t.amount || 0), 0);
 
-  const expenseThisMonth = txnsThisMonth
-    .filter((t) => t.type === "expense")
-    .reduce((sum, t) => sum + Number(t.amount || 0), 0);
-
-  // Gasto total del mes (esencial + no esencial)
-const totalExpenseThisMonth = txnsThisMonth
-  .filter((t) => t.type === "expense")
-  .reduce((sum, t) => sum + Number(t.amount || 0), 0);
-
-// Para análisis secundario (se mantiene)
-const essentialCategoryIds = new Set(
-  categories.filter((c) => c.essential).map((c) => c.id)
-);
-
-const essentialExpenseThisMonth = txnsThisMonth
-  .filter((t) => t.type === "expense" && essentialCategoryIds.has(t.categoryId))
-  .reduce((sum, t) => sum + Number(t.amount || 0), 0);
-
-const nonEssentialExpenseThisMonth =
-  Math.max(0, totalExpenseThisMonth - essentialExpenseThisMonth);
-const savingsThisMonth = Math.max(0, incomeThisMonth - totalExpenseThisMonth);
-
-
-// Meses de cobertura REAL
-const coverageMonths =
-  totalExpenseThisMonth > 0
-    ? totalFunds / totalExpenseThisMonth
+  // --- 3. LÓGICA DE COBERTURA INTELIGENTE ---
+  // Si en el mes actual no hay gastos, buscamos el promedio histórico para que el nivel no sea 0
+  const allExpenses = txns.filter(t => t.type === "expense");
+  const avgMonthlyExpense = allExpenses.length > 0 
+    ? allExpenses.reduce((s, t) => s + Number(t.amount), 0) / (new Set(allExpenses.map(t => t.date.substring(0,7))).size || 1)
     : 0;
+
+  // Usamos el gasto de este mes, pero si es 0, usamos el promedio para calcular libertad financiera
+  const costOfLiving = expenseThisMonth > 0 ? expenseThisMonth : avgMonthlyExpense;
   
+  const coverageMonths = costOfLiving > 0 ? cumulativeBalance / costOfLiving : 0;
   const lvl = levelFromCoverageMonths(coverageMonths);
 
-  // Mensaje (sin revelar % del libro)
-  const strategy = lvl.level <= 1 ? "Escudo" : lvl.level === 2 ? "Estabilización" : lvl.level === 3 ? "Optimización" : "Soberanía";
-  const strategyText =
-    lvl.level <= 1
-      ? "Para salir de este nivel, aplica la estrategia Escudo descrita en el Método ESFERA."
-      : "Para seguir avanzando, revisa la estrategia recomendada en el Método ESFERA.";
-
-  // Presupuesto vs Real por categoría (solo gasto)
-  const budgetByCat = categories.reduce((acc, c) => {
-    const pct = Number(c.percent || 0);
-    const budget = (incomeThisMonth * pct) / 100;
-    acc[c.id] = budget;
-    return acc;
-  }, {});
-
-  const realByCat = txnsThisMonth
-    .filter((t) => t.type === "expense")
-    .reduce((acc, t) => {
-      acc[t.categoryId] = (acc[t.categoryId] || 0) + Number(t.amount || 0);
-      return acc;
-    }, {});
-
-  const topCats = categories
+  // --- 4. PREPARACIÓN DE TABLA PPTO VS REAL (MANTENIDA) ---
+  const tableData = categories
     .filter((c) => c.type !== "Ingreso")
-    .map((c) => ({
-      id: c.id,
-      name: c.name,
-      essential: c.essential,
-      budget: budgetByCat[c.id] || 0,
-      real: realByCat[c.id] || 0,
-    }))
-    .filter((x) => x.budget > 0 || x.real > 0)
-    .sort((a, b) => (b.real || 0) - (a.real || 0))
-    .slice(0, 6);
+    .map((c) => {
+      const budget = (incomeThisMonth * Number(c.percent || 0)) / 100;
+      const real = txnsThisMonth.filter(t => t.type === "expense" && t.categoryId === c.id).reduce((s, t) => s + Number(t.amount || 0), 0);
+      return { ...c, budget, real, pct: budget > 0 ? (real / budget) * 100 : 0 };
+    })
+    .filter(x => x.budget > 0 || x.real > 0)
+    .sort((a, b) => b.real - a.real);
 
   return (
     <div style={styles.page}>
@@ -121,338 +89,116 @@ const coverageMonths =
             <h1 style={styles.title}>ESFERA</h1>
             <p style={styles.subtitle}>Control financiero personal</p>
           </div>
-
           <div style={styles.filters}>
             <select value={selectedMonth} onChange={(e) => setSelectedMonth(Number(e.target.value))} style={styles.select}>
-              {Array.from({ length: 12 }).map((_, i) => {
-                const m = i + 1;
-                return (
-                  <option key={m} value={m}>
-                    {String(m).padStart(2, "0")}
-                  </option>
-                );
-              })}
+              {Array.from({ length: 12 }).map((_, i) => (<option key={i+1} value={i+1}>{String(i+1).padStart(2, "0")}</option>))}
             </select>
-
-            <input
-              type="number"
-              value={selectedYear}
-              onChange={(e) => setSelectedYear(Number(e.target.value))}
-              style={styles.year}
-              min={2000}
-              max={2100}
-            />
+            <input type="number" value={selectedYear} onChange={(e) => setSelectedYear(Number(e.target.value))} style={styles.year} />
           </div>
         </header>
 
         <section style={styles.grid}>
+          {/* NIVEL FINANCIERO Y FUNNEL ASOCIADO */}
           <div style={styles.card}>
             <h2 style={styles.cardTitle}>Nivel financiero</h2>
             <div style={styles.levelRow}>
-              <div style={styles.levelBig}>
-                Nivel {lvl.level} · {lvl.label}
-              </div>
-              <div style={styles.levelMeta}>
-                Cobertura: <strong>{coverageMonths ? coverageMonths.toFixed(1) : "0.0"}</strong> meses (esencial)
-              </div>
+              <div style={styles.levelBig}>Nivel {lvl.level} · {lvl.label}</div>
+              <div style={styles.levelMeta}>Cobertura: <strong>{coverageMonths.toFixed(1)}</strong> meses</div>
             </div>
-            <p style={styles.muted}>{strategyText}</p>
-            <div style={styles.badge}>Estrategia: {strategy}</div>
+            
+            {/* El componente FunnelNivel ahora recibe el nivel real y DEBE pintarse/seleccionarse internamente */}
+            <div style={{ marginTop: 20 }}>
+               <FunnelNivel nivelActual={lvl.level} />
+            </div>
+            
+            <div style={{...styles.badge, marginTop: 20}}>
+              Estrategia: {lvl.level <= 1 ? "Escudo" : lvl.level === 2 ? "Estabilización" : lvl.level <= 4 ? "Optimización" : "Soberanía"}
+            </div>
           </div>
 
+          {/* FONDO Y GRÁFICA DE GASTOS */}
           <div style={styles.card}>
-            <h2 style={styles.cardTitle}>Fondo disponible</h2>
-            <div style={styles.money}>$ {money(totalFunds)}</div>
-            <p style={styles.muted}>Saldo total en todas tus cuentas</p>
-
-            <div style={styles.accountsMini}>
-              {accounts.map((a) => (
-                <div key={a.id} style={styles.accountChip}>
-                  <div style={{ fontWeight: 700 }}>{a.name}</div>
-                  <div style={{ fontSize: 12, opacity: 0.8 }}>Inicial: $ {money(a.initialBalance)}</div>
-                  <div style={{ marginTop: 4 }}>Actual: $ {money(balancesMap.get(a.id) || 0)}</div>
-                </div>
-              ))}
+            <h2 style={styles.cardTitle}>Fondo Disponible Acumulado</h2>
+            <div style={styles.money}>$ {money(cumulativeBalance)}</div>
+            <p style={styles.muted}>Saldo total al cierre de {selectedMonth}/{selectedYear}</p>
+            
+            <hr style={{ margin: '20px 0', border: '0', borderTop: '1px solid #f0f4f8' }} />
+            
+            <h3 style={{ fontSize: 14, color: '#102a43', marginBottom: 15 }}>Distribución de Gastos (Mes)</h3>
+            <div style={{ height: 200 }}>
+              <PieGastos 
+                esenciales={txnsThisMonth.filter(t => t.type === "expense" && categories.find(c => c.id === t.categoryId)?.essential).reduce((s,t)=>s+Number(t.amount),0)}
+                noEsenciales={txnsThisMonth.filter(t => t.type === "expense" && !categories.find(c => c.id === t.categoryId)?.essential).reduce((s,t)=>s+Number(t.amount),0)}
+                ahorro={Math.max(0, incomeThisMonth - expenseThisMonth)}
+              />
             </div>
           </div>
         </section>
 
-        <section style={styles.grid}>
+        {/* TABLA DE CUMPLIMIENTO PROFESIONAL */}
+        <section style={{ marginTop: 16 }}>
           <div style={styles.card}>
-            <h2 style={styles.cardTitle}>Resumen del mes</h2>
-            <div style={styles.kpis}>
-              <div style={styles.kpi}>
-                <div style={styles.kpiLabel}>Ingresos</div>
-                <div style={styles.kpiValue}>$ {money(incomeThisMonth)}</div>
-              </div>
-              <div style={styles.kpi}>
-                <div style={styles.kpiLabel}>Gastos</div>
-                <div style={styles.kpiValue}>$ {money(expenseThisMonth)}</div>
-              </div>
-              <div style={styles.kpi}>
-                <div style={styles.kpiLabel}>Esenciales</div>
-                <div style={styles.kpiValue}>$ {money(essentialExpenseThisMonth)}</div>
-              </div>
-              <div style={styles.kpi}>
-                <div style={styles.kpiLabel}>No esenciales</div>
-                <div style={styles.kpiValue}>$ {money(nonEssentialExpenseThisMonth)}</div>
-              </div>
+            <h2 style={styles.cardTitle}>Presupuesto vs Ejecución</h2>
+            <div style={{ overflowX: 'auto', marginTop: 15 }}>
+              <table style={{ width: '100%', borderCollapse: 'collapse' }}>
+                <thead>
+                  <tr style={{ borderBottom: '2px solid #f0f4f8', textAlign: 'left' }}>
+                    <th style={styles.th}>Categoría</th>
+                    <th style={styles.th}>Ppto</th>
+                    <th style={styles.th}>Real</th>
+                    <th style={styles.th}>%</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {tableData.map(row => (
+                    <tr key={row.id} style={{ borderBottom: '1px solid #f0f4f8' }}>
+                      <td style={styles.td}><strong>{row.name}</strong></td>
+                      <td style={styles.td}>$ {money(row.budget)}</td>
+                      <td style={styles.td}>$ {money(row.real)}</td>
+                      <td style={{ ...styles.td, color: row.pct > 100 ? '#ef4444' : '#10b981', fontWeight: '800' }}>
+                        {row.pct.toFixed(0)}%
+                      </td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
             </div>
           </div>
-
-          <div style={styles.card}>
-            <h2 style={styles.cardTitle}>Presupuesto vs Real (Top)</h2>
-            {topCats.length === 0 ? (
-              <p style={styles.muted}>Aún no hay datos suficientes en este mes. Registra ingresos, define % en Categorías y registra gastos.</p>
-            ) : (
-              <div style={{ display: "grid", gap: 10 }}>
-                {topCats.map((c) => {
-                  const ratio = c.budget > 0 ? Math.min(1, c.real / c.budget) : 0;
-                  return (
-                    <div key={c.id} style={styles.row}>
-                      <div style={{ minWidth: 160 }}>
-                        <div style={{ fontWeight: 700 }}>{c.name}</div>
-                        <div style={{ fontSize: 12, opacity: 0.8 }}>{c.essential ? "Esencial" : "No esencial"}</div>
-                      </div>
-                      <div style={{ flex: 1 }}>
-                        <div style={styles.barTrack}>
-                          <div style={{ ...styles.barFill, width: `${ratio * 100}%` }} />
-                        </div>
-                        <div style={styles.rowMeta}>
-                          Presupuesto: $ {money(c.budget)} · Real: $ {money(c.real)}
-                        </div>
-                      </div>
-                    </div>
-                  );
-                })}
-              </div>
-            )}
-          </div>
         </section>
-
-        {/* Embudo (imagen del libro): opcional.
-            Si quieres verlo aquí, guarda tu imagen como:
-            public/embudo-esfera.png
-            y descomenta el bloque. */}
-        {/*
-        <section style={styles.card}>
-          <h2 style={styles.cardTitle}>Embudo de niveles</h2>
-          <img src="/embudo-esfera.png" alt="Embudo ESFERA" style={{ width: "100%", maxWidth: 900 }} />
-        </section>
-        */}
 
         <section style={styles.actions}>
           <button style={styles.btnSecondary} onClick={onGoAccounts}>Cuentas</button>
           <button style={styles.btnSecondary} onClick={onGoCategories}>Categorías</button>
-          <button style={styles.btnPrimary} onClick={onGoIncome}>Registrar ingreso</button>
-          <button style={styles.btnPrimary} onClick={onGoExpense}>Registrar gasto</button>
-	<button style={styles.btnSecondary} onClick={onGoDebts}>Deudas</button>
-
+          <button style={styles.btnPrimary} onClick={onGoIncome}>+ Ingreso</button>
+          <button style={styles.btnPrimary} onClick={onGoExpense}>+ Gasto</button>
+          <button style={styles.btnPrimary} onClick={onGoDebts}>+ Deuda</button>
         </section>
-{/* ===================== */}
-{/* VISUALES ESTRATÉGICOS */}
-{/* ===================== */}
-
-<section style={{ marginTop: 28 }}>
-  <div style={styles.card}>
-    <FunnelNivel nivelActual={lvl.level} />
-  </div>
-
-  <div style={{ ...styles.card, marginTop: 16 }}>
-    <PieGastos
-      esenciales={essentialExpenseThisMonth}
-      noEsenciales={nonEssentialExpenseThisMonth}
-      ahorro={savingsThisMonth}
-    />
-  </div>
-</section>
-
       </div>
     </div>
   );
 }
 
 const styles = {
-  page: {
-    minHeight: "100vh",
-    background: "#f6f8fb",
-    padding: "28px 16px",
-  },
-  container: {
-    maxWidth: 980,
-    margin: "0 auto",
-  },
-  header: {
-    display: "flex",
-    justifyContent: "space-between",
-    gap: 16,
-    alignItems: "flex-end",
-    marginBottom: 18,
-  },
-  title: {
-    margin: 0,
-    fontSize: 52,
-    letterSpacing: 1,
-    color: "#102a43",
-  },
-  subtitle: {
-    margin: "6px 0 0",
-    color: "#334e68",
-    fontSize: 16,
-  },
-  filters: {
-    display: "flex",
-    gap: 10,
-    alignItems: "center",
-  },
-  select: {
-    padding: "10px 12px",
-    borderRadius: 10,
-    border: "1px solid #d9e2ec",
-    background: "white",
-  },
-  year: {
-    width: 90,
-    padding: "10px 12px",
-    borderRadius: 10,
-    border: "1px solid #d9e2ec",
-    background: "white",
-  },
-  grid: {
-    display: "grid",
-    gridTemplateColumns: "1fr 1fr",
-    gap: 16,
-    marginTop: 16,
-  },
-  card: {
-    background: "white",
-    border: "1px solid #e6edf5",
-    borderRadius: 16,
-    padding: 18,
-    boxShadow: "0 8px 20px rgba(16,42,67,0.06)",
-  },
-  cardTitle: {
-    margin: 0,
-    fontSize: 16,
-    color: "#102a43",
-    letterSpacing: 0.3,
-  },
-  levelRow: {
-    marginTop: 10,
-    display: "flex",
-    justifyContent: "space-between",
-    gap: 12,
-    flexWrap: "wrap",
-  },
-  levelBig: {
-    fontSize: 26,
-    fontWeight: 800,
-    color: "#102a43",
-  },
-  levelMeta: {
-    color: "#334e68",
-    alignSelf: "center",
-  },
-  badge: {
-    display: "inline-block",
-    marginTop: 10,
-    padding: "6px 10px",
-    borderRadius: 999,
-    background: "#edf2ff",
-    border: "1px solid #dbe4ff",
-    color: "#364fc7",
-    fontWeight: 700,
-    fontSize: 12,
-  },
-  money: {
-    marginTop: 10,
-    fontSize: 34,
-    fontWeight: 900,
-    color: "#102a43",
-  },
-  muted: {
-    marginTop: 8,
-    color: "#52606d",
-    lineHeight: 1.5,
-  },
-  actions: {
-    display: "flex",
-    gap: 12,
-    flexWrap: "wrap",
-    marginTop: 18,
-  },
-  btnPrimary: {
-    padding: "12px 16px",
-    borderRadius: 12,
-    border: "1px solid #bcccdc",
-    background: "#102a43",
-    color: "white",
-    fontWeight: 800,
-    cursor: "pointer",
-  },
-  btnSecondary: {
-    padding: "12px 16px",
-    borderRadius: 12,
-    border: "1px solid #bcccdc",
-    background: "white",
-    color: "#102a43",
-    fontWeight: 800,
-    cursor: "pointer",
-  },
-  accountsMini: {
-    display: "grid",
-    gridTemplateColumns: "1fr 1fr",
-    gap: 10,
-    marginTop: 12,
-  },
-  accountChip: {
-    border: "1px solid #e6edf5",
-    borderRadius: 12,
-    padding: 10,
-    background: "#fbfdff",
-  },
-  kpis: {
-    marginTop: 12,
-    display: "grid",
-    gridTemplateColumns: "1fr 1fr",
-    gap: 12,
-  },
-  kpi: {
-    border: "1px solid #e6edf5",
-    borderRadius: 12,
-    padding: 12,
-    background: "#fbfdff",
-  },
-  kpiLabel: {
-    fontSize: 12,
-    color: "#52606d",
-    fontWeight: 700,
-  },
-  kpiValue: {
-    marginTop: 6,
-    fontSize: 18,
-    fontWeight: 900,
-    color: "#102a43",
-  },
-  row: {
-    display: "flex",
-    gap: 12,
-    alignItems: "center",
-  },
-  barTrack: {
-    height: 10,
-    borderRadius: 999,
-    background: "#e6edf5",
-    overflow: "hidden",
-  },
-  barFill: {
-    height: 10,
-    borderRadius: 999,
-    background: "#6c8ef2",
-  },
-  rowMeta: {
-    marginTop: 6,
-    fontSize: 12,
-    color: "#52606d",
-  },
+  page: { minHeight: "100vh", background: "#f6f8fb", padding: "28px 16px" },
+  container: { maxWidth: 980, margin: "0 auto" },
+  header: { display: "flex", justifyContent: "space-between", gap: 16, alignItems: "flex-end", marginBottom: 18 },
+  title: { margin: 0, fontSize: 52, letterSpacing: 1, color: "#102a43" },
+  subtitle: { margin: "6px 0 0", color: "#334e68", fontSize: 16 },
+  filters: { display: "flex", gap: 10, alignItems: "center" },
+  select: { padding: "10px 12px", borderRadius: 10, border: "1px solid #d9e2ec", background: "white" },
+  year: { width: 90, padding: "10px 12px", borderRadius: 10, border: "1px solid #d9e2ec", background: "white" },
+  grid: { display: "grid", gridTemplateColumns: "1fr 1fr", gap: 16, marginTop: 16 },
+  card: { background: "white", border: "1px solid #e6edf5", borderRadius: 16, padding: 18, boxShadow: "0 8px 20px rgba(16,42,67,0.06)" },
+  cardTitle: { margin: 0, fontSize: 16, color: "#102a43", fontWeight: 700 },
+  levelRow: { marginTop: 10, display: "flex", justifyContent: "space-between", alignItems: 'center' },
+  levelBig: { fontSize: 22, fontWeight: 800, color: "#102a43" },
+  levelMeta: { color: "#334e68", fontSize: 13 },
+  money: { marginTop: 10, fontSize: 36, fontWeight: 900, color: "#102a43" },
+  badge: { display: "inline-block", padding: "6px 14px", borderRadius: 999, background: "#edf2ff", color: "#364fc7", fontWeight: 700, fontSize: 12 },
+  muted: { marginTop: 8, color: "#52606d", fontSize: 13 },
+  actions: { display: "flex", gap: 12, flexWrap: "wrap", marginTop: 24 },
+  btnPrimary: { padding: "14px 22px", borderRadius: 12, background: "#102a43", color: "white", fontWeight: 800, border: 'none', cursor: 'pointer' },
+  btnSecondary: { padding: "14px 22px", borderRadius: 12, background: "white", color: "#102a43", border: "1px solid #bcccdc", fontWeight: 800, cursor: 'pointer' },
+  th: { padding: '12px 8px', color: '#627d98', fontSize: 11, textTransform: 'uppercase' },
+  td: { padding: '14px 8px', fontSize: 14, color: '#102a43' }
 };
